@@ -32,7 +32,7 @@ Modify the database setting in `rating_backend/settings.py`.
 Download the data from
 https://www.kaggle.com/datasets/rishitjavia/netflix-movie-rating-dataset/data, and put them under `./archive`.
 
-Run the project using `python manage.py runserver` and call `http://127.0.0.1:8000/movie/load`.
+Run the project using `python manage.py runserver` and call `http://127.0.0.1:8000/v1/movie/load`.
 
 # API List v1
 
@@ -40,7 +40,7 @@ Run the project using `python manage.py runserver` and call `http://127.0.0.1:80
   
   Load data from csv files.
 
-- RateMovie 	POST /v1/movie/:id   userId
+- RateMovie 	POST /v1/movie/:id/rate/   userId
   
   Store a user's rating for a movie, and add noise for it.
 
