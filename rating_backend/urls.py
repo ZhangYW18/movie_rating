@@ -16,8 +16,10 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from . import index
 
 urlpatterns = [
+    path("", index.get_index_hello),
     path("v1/movie/", include("movie.urls")),
     path('admin/', admin.site.urls),
 ]
