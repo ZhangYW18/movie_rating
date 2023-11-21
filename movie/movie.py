@@ -2,12 +2,11 @@ import csv
 import time
 
 import numpy as np
-from scipy.stats import laplace
 import threading
 import traceback
 
 from django.db.models import Count, Avg, F
-from django.http import JsonResponse, HttpRequest
+from django.http import JsonResponse, HttpRequest, Http404
 from django.views.decorators.csrf import csrf_exempt
 
 from rating_backend.settings import ARCHIVE_DATA_FOLDER, EPSILON_USER_AVG, MAX_RATING, EPSILON_GLOBAL_DP, \
@@ -49,10 +48,8 @@ def load_csv_data(request, max_movie_id=500, max_user_id=500, evaluate=False, ev
         pre_movie_id = -1
         movie_rate_user_count = 0
         for row in csv_reader:
-            # if line_count == 3:
-            #     break
-            if line_count % 100 == 0:
-                print(f'Processed {line_count} lines for rating table.')
+            if line_count % 10000 == 0:
+                print(f'Processed {line_count} lines of ratings.')
             if line_count == 0:
                 print(f'Column names are {", ".join(row)}')
                 line_count += 1
@@ -82,10 +79,6 @@ def load_csv_data(request, max_movie_id=500, max_user_id=500, evaluate=False, ev
                 line_count += 1
         print(f'Processed {line_count} lines for rating table.')
     return JsonResponse({"msg": "load success"})
-
-
-def laplace_sample(x, loc, sensitivity=1):
-    return laplace.pdf(x, loc=loc, scale=sensitivity / EPSILON_USER_AVG)
 
 
 # Report noisy max
@@ -243,3 +236,29 @@ def handle_evaluate_by_user(request, max_user_id=6):
             writer.writerow(data)
         print(f"Processed users with max_user_id<{max_user_id}")
     return JsonResponse({"msg": "evaluate success"})
+
+
+def get_movie(request, id):
+    try:
+        movie = Movie.objects.get(pk=id)
+        return JsonResponse({
+            'id': movie.id,
+            'year': movie.year,
+            'name': movie.name
+        })
+    except Movie.DoesNotExist:
+        raise Http404("Movie does not exist")
+
+
+def get_movie_rating_dist(request):
+    # Assume movie ID is provided as a query parameter
+    movie_id = request.GET.get('movie_id')
+    if not movie_id:
+        return JsonResponse({'error': 'Movie ID is required.'}, status=400)
+    
+    distribution = Rating.objects.filter(movie_id=int(movie_id)).values('rating').annotate(count=Count('rating')).order_by('rating')
+    print(distribution)
+    distribution_data = {rating['rating']: rating['count'] for rating in distribution}
+    
+    return JsonResponse(distribution_data)
+
