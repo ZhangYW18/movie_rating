@@ -9,15 +9,16 @@ from django.db.models import Count, Avg, F
 from django.http import JsonResponse, HttpRequest, Http404
 from django.views.decorators.csrf import csrf_exempt
 
-from rating_backend.settings import ARCHIVE_DATA_FOLDER, EPSILON_USER_AVG, MAX_RATING, EPSILON_GLOBAL_DP, \
-    SENSITIVITY_GLOBAL_DP, SCORE_MOVIE_RATING_DISTRIBUTION, SCORE_USER_RATING_DISTRIBUTION
+from rating_backend.settings import ARCHIVE_DATA_FOLDER, MAX_RATING, EPSILON_GLOBAL_DP, \
+    SENSITIVITY_GLOBAL_DP, SCORE_MOVIE_RATING_DISTRIBUTION, SCORE_USER_RATING_DISTRIBUTION, DATASET_MAX_USER_ID, \
+    DATASET_MAX_MOVIE_ID
 from .models import Movie
 from .models import Rating
 
 
-def load_csv_data(request, max_movie_id=500, max_user_id=500, evaluate=False, evaluate_by_user=False):
+def load_csv_data(request, min_movie_id=0, max_movie_id=DATASET_MAX_MOVIE_ID, max_user_id=DATASET_MAX_USER_ID, evaluate=False, evaluate_by_user=False):
     # Movie.objects.all().delete()
-    # Rating.objects.all().delete()
+    Rating.objects.all().delete()
     if evaluate_by_user:
         Rating.objects.filter(user_id__lte=max_user_id).delete()
     else:
@@ -41,14 +42,16 @@ def load_csv_data(request, max_movie_id=500, max_user_id=500, evaluate=False, ev
         print(f'Processed {line_count} lines for movie table.')
 
     rating_file_name = 'Netflix_Dataset_Rating_Sorted_By_User.csv' if evaluate_by_user else \
-        'Netflix_Dataset_Rating.csv'
+        'Netflix_Dataset_Rating_Sorted_By_Movie_User.csv'
     with open(ARCHIVE_DATA_FOLDER + rating_file_name) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
         pre_movie_id = -1
         movie_rate_user_count = 0
         for row in csv_reader:
-            if line_count % 10000 == 0:
+            if line_count > 10000:
+                break
+            if line_count % 1000 == 0:
                 print(f'Processed {line_count} lines of ratings.')
             if line_count == 0:
                 print(f'Column names are {", ".join(row)}')
@@ -58,23 +61,28 @@ def load_csv_data(request, max_movie_id=500, max_user_id=500, evaluate=False, ev
                     if int(row[0]) > max_user_id:
                         break
                 else:
+                    if int(row[2]) < min_movie_id:
+                        continue
                     if int(row[2]) > max_movie_id:
                         break
+                    if int(row[0]) > max_user_id:
+                        continue
                 if evaluate:
                     if pre_movie_id != int(row[2]):
                         pre_movie_id = int(row[2])
                         movie_rate_user_count = 1
                     else:
-                        if movie_rate_user_count >= 1000:
-                            continue
+                        # if movie_rate_user_count >= 1000:
+                        #     continue
                         movie_rate_user_count = movie_rate_user_count + 1
                     request = HttpRequest()
                     request.POST['user_id'] = row[0]
                     request.POST['rating'] = row[1]
-                    handle_rate(request, row[2])
-                    time.sleep(0.01)
+                    m = Rating(movie_id=Movie(id=int(row[2])), user_id=int(row[0]), rating=int(row[1]))
+                    m.noise = add_noise(m, store_instantly=False)
+                    m.save()
                 else:
-                    m = Rating(movie_id=Movie(id=int(row[2])), user_id=row[0], rating=row[1])
+                    m = Rating(movie_id=Movie(id=int(row[2])), user_id=int(row[0]), rating=int(row[1]))
                     m.save()
                 line_count += 1
         print(f'Processed {line_count} lines for rating table.')
@@ -83,7 +91,7 @@ def load_csv_data(request, max_movie_id=500, max_user_id=500, evaluate=False, ev
 
 # Report noisy max
 # Special case: when user modify the rating?
-def add_noise(rating_obj):
+def add_noise(rating_obj, store_instantly=True):
     # Calculate the scores for each rating based on the average rating of a movie
     movie_ratings = Rating.objects.filter(movie_id=rating_obj.movie_id).values('rating')
     movie_rating_distribution = movie_ratings.annotate(count=Count('id'))
@@ -121,13 +129,22 @@ def add_noise(rating_obj):
     scores = [score_from_user_distribution[i] + score for i, score in enumerate(scores)]
     noisy_scores = [np.random.laplace(loc=0, scale=SENSITIVITY_GLOBAL_DP / EPSILON_GLOBAL_DP) + score
                     for score in scores]
+    '''
+    Optimization: exclude noise > 2.
+    Turning it on will make the avg_rating closer to the avg_noised_rating,
+    but make the variance less.
+    '''
+    # min_tmp = min(noisy_scores)
+    # noisy_scores = [min_tmp-1 if abs(i+1-rating_obj.rating) > 2 else score for i, score in enumerate(noisy_scores)]
+
     ratings = range(1, MAX_RATING+1)
     noised_rating = ratings[np.argmax(noisy_scores)]
 
     # Get selected noise and store it into DB
     noise = noised_rating - rating_obj.rating
     rating_obj.noise = noise
-    rating_obj.save()
+    if store_instantly:
+        rating_obj.save()
     # print("noise added for rating", rating_obj.id)
     return noise
 
@@ -175,11 +192,8 @@ def get_variance_for_distribution(rating_distribution):
     return counts, np.round(weighted_variance, decimals=2)
 
 
-def handle_evaluate_by_movie(request, max_movie_id=3):
-    load_csv_data(request, max_movie_id=max_movie_id, evaluate=True)
-    print(f"Waiting...")
-    time.sleep(10)
-    with open(ARCHIVE_DATA_FOLDER + 'Evaluate_Result_' + str(int(time.time())) + '.csv', 'w') as f:
+def export_movie_rating_distribution(max_movie_id=DATASET_MAX_MOVIE_ID, time_now=str(int(time.time()))):
+    with open(ARCHIVE_DATA_FOLDER + 'Evaluate_Result_Movie' + time_now + '.csv', 'w') as f:
         writer = csv.writer(f)
         header = ['movie_id', 'avg_rating', 'avg_noised_rating',
                   'rating_count', 'rating_variance',
@@ -194,7 +208,7 @@ def handle_evaluate_by_movie(request, max_movie_id=3):
             movie_avg_noise = movie_ratings.aggregate(Avg("noise", default=0))['noise__avg']
             movie_avg_rating = movie_ratings.aggregate(Avg("rating", default=0))['rating__avg']
             movie_rating_distribution = movie_ratings.values('rating').annotate(count=Count('id')).order_by('rating')
-            movie_noised_rating_distribution = movie_ratings.annotate(noised_rating=F('noise')+F('rating'))\
+            movie_noised_rating_distribution = movie_ratings.annotate(noised_rating=F('noise')+F('rating')) \
                 .values('noised_rating').annotate(count=Count('id')).order_by('noised_rating')
             counts, variance = get_variance_for_distribution(movie_rating_distribution)
             n_counts, n_variance = get_variance_for_distribution(movie_noised_rating_distribution)
@@ -204,21 +218,16 @@ def handle_evaluate_by_movie(request, max_movie_id=3):
             writer.writerow(data)
         print(f"Processed movies with max_movie_id<{max_movie_id}")
 
-    return JsonResponse({"msg": "evaluate success"})
 
-
-def handle_evaluate_by_user(request, max_user_id=6):
-    load_csv_data(request, max_user_id=max_user_id, evaluate=True, evaluate_by_user=True)
-    print(f"Waiting...")
-    time.sleep(10)
-    with open(ARCHIVE_DATA_FOLDER + 'Evaluate_Result_' + str(int(time.time())) + '.csv', 'w') as f:
+def export_user_rating_distribution(max_user_id=DATASET_MAX_USER_ID, time_now=str(int(time.time()))):
+    with open(ARCHIVE_DATA_FOLDER + 'Evaluate_Result_User' + time_now + '.csv', 'w') as f:
         writer = csv.writer(f)
         header = ['user_id', 'avg_rating', 'avg_noised_rating',
                   'rating_count', 'rating_variance',
                   'noised_count', 'noised_variance']
         writer.writerow(header)
         for i in range(0, max_user_id+1):
-            if i % 100 == 0:
+            if i % 10000 == 0:
                 print(f"Processed users with max_user_id<{i}.")
             user_ratings = Rating.objects.filter(user_id=i)
             if user_ratings.count() == 0:
@@ -235,6 +244,23 @@ def handle_evaluate_by_user(request, max_user_id=6):
                     n_counts, n_variance]
             writer.writerow(data)
         print(f"Processed users with max_user_id<{max_user_id}")
+
+
+def handle_evaluate_by_movie(request, max_movie_id=DATASET_MAX_MOVIE_ID):
+    load_csv_data(request, max_movie_id=max_movie_id, evaluate=True)
+    print(f"Waiting for result exportation...")
+    time_now = str(int(time.time()))
+    export_movie_rating_distribution(max_movie_id=max_movie_id, time_now=time_now)
+    export_user_rating_distribution(time_now=time_now)
+    return JsonResponse({"msg": "evaluate success"})
+
+
+def handle_evaluate_by_user(request, max_user_id=DATASET_MAX_USER_ID):
+    load_csv_data(request, max_user_id=max_user_id, evaluate=True, evaluate_by_user=True)
+    print(f"Waiting for result exportation...")
+    time_now = str(int(time.time()))
+    export_movie_rating_distribution(time_now=time_now)
+    export_user_rating_distribution(max_user_id=max_user_id, time_now=time_now)
     return JsonResponse({"msg": "evaluate success"})
 
 

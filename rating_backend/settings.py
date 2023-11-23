@@ -34,13 +34,18 @@ settings_dir = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.dirname(settings_dir))
 ARCHIVE_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'archive/')
 
+# DP related
 MAX_RATING = 5
 SCORE_MOVIE_RATING_DISTRIBUTION = 3
 SCORE_USER_RATING_DISTRIBUTION = 2
-EPSILON_USER_AVG = 0.5
+# EPSILON_USER_AVG = 0.5
 EPSILON_GLOBAL_DP = 1
 SENSITIVITY_GLOBAL_DP = 1
 SENSITIVITY = 1
+
+# Dataset related
+DATASET_MAX_USER_ID = 2649430
+DATASET_MAX_MOVIE_ID = 4497
 
 INSTALLED_APPS = [
     "movie.apps.MovieConfig",
