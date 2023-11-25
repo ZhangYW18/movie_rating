@@ -49,8 +49,8 @@ def load_csv_data(request, min_movie_id=0, max_movie_id=DATASET_MAX_MOVIE_ID, ma
         pre_movie_id = -1
         movie_rate_user_count = 0
         for row in csv_reader:
-            if line_count > 10000:
-                break
+            # if line_count > 10000:
+            #     break
             if line_count % 1000 == 0:
                 print(f'Processed {line_count} lines of ratings.')
             if line_count == 0:
