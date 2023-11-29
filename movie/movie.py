@@ -1,4 +1,5 @@
 import csv
+import os
 import time
 
 import numpy as np
@@ -14,6 +15,10 @@ from rating_backend.settings import ARCHIVE_DATA_FOLDER, MAX_RATING, EPSILON_GLO
     DATASET_MAX_MOVIE_ID
 from .models import Movie
 from .models import Rating
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
 def load_csv_data(request, min_movie_id=0, max_movie_id=DATASET_MAX_MOVIE_ID, max_user_id=DATASET_MAX_USER_ID, evaluate=False, evaluate_by_user=False):
@@ -288,3 +293,29 @@ def get_movie_rating_dist(request):
     
     return JsonResponse(distribution_data)
 
+
+def get_noise_value_bar_diagram(request):
+    y = [[0 for _ in range(5)] for _ in range(6)]
+
+    ratings = Rating.objects.filter(movie_id__lt=306)
+    for rating in ratings:
+        # print(rating.rating)
+        y[0][abs(rating.noise)] = y[0][abs(rating.noise)] + 1
+        y[rating.rating][rating.rating + rating.noise - 1] = y[rating.rating][rating.rating + rating.noise - 1] + 1
+
+    for i in range(0, 6):
+        plt.xlabel('Delta (Noise)')
+        plt.ylabel('Counts')
+        if i == 0:
+            x = range(0, 5)
+            plt.title('Noise Value Stats')
+            plt.bar(x, y[i])
+        else:
+            x = range(1, 6)
+            plt.title('Noised Ratings for Rating ' + str(i))
+            plt.bar(x, y[i])
+        plt.subplots_adjust(left=0.2, right=0.9, top=0.9, bottom=0.1)
+        plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_count_{i}.png'))
+        plt.clf()
+
+    return JsonResponse({"msg": "evaluate success"})
