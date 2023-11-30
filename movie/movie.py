@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from rating_backend.settings import ARCHIVE_DATA_FOLDER, MAX_RATING, EPSILON_GLOBAL_DP, \
     SENSITIVITY_GLOBAL_DP, SCORE_MOVIE_RATING_DISTRIBUTION, SCORE_USER_RATING_DISTRIBUTION, DATASET_MAX_USER_ID, \
-    DATASET_MAX_MOVIE_ID
+    DATASET_MAX_MOVIE_ID, RESULT_DATA_FOLDER
 from .models import Movie
 from .models import Rating
 
@@ -307,17 +307,19 @@ def get_noise_value_bar_diagram(request):
         y[0][abs(rating.noise)] = y[0][abs(rating.noise)] + 1
         y[rating.rating][rating.rating + rating.noise - 1] = y[rating.rating][rating.rating + rating.noise - 1] + 1
 
-    for i in range(0, 6):
+    # Draw the distribution of noise for all noised ratings
+    plt.title('Noise Value Stats')
+    plt.pie(y[0], labels=range(0, 5))
+    plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_pie.png'))
+    plt.clf()
+
+    # Draw the distribution of noise for each original rating value
+    for i in range(1, 6):
         plt.xlabel('Delta (Noise)')
         plt.ylabel('Counts')
-        if i == 0:
-            x = range(0, 5)
-            plt.title('Noise Value Stats')
-            plt.bar(x, y[i])
-        else:
-            x = range(1, 6)
-            plt.title('Noised Ratings for Rating ' + str(i))
-            plt.bar(x, y[i])
+        x = range(1, 6)
+        plt.title('Noised Ratings for Rating ' + str(i))
+        plt.bar(x, y[i])
         plt.subplots_adjust(left=0.2, right=0.9, top=0.9, bottom=0.1)
         plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_count_{i}.png'))
         plt.clf()
@@ -352,5 +354,40 @@ def get_avg_noise_for_movies(request, movie_id):
     plt.plot(x, y, marker='o', color='b')
     plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/avg_noise_movie_{movie_id}.png'))
     plt.clf()
+
+    return JsonResponse({"msg": "plot success"})
+
+
+def get_avg_noise_for_all_movie_user(request, time_str):
+    # timestr = 1700938086 for now
+    for file_str in ['Movie', 'User']:
+        x, y = [], []
+        with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
+            csv_reader = csv.reader(csv_file, delimiter=',')
+            line_count = 0
+            for row in csv_reader:
+                if line_count == 0:
+                    line_count += 1
+                    continue
+
+                rating_distribution = [int(rating) for rating in row[3][1:-1].split()]
+                noised_rating_distribution = [int(rating) for rating in row[5][1:-1].split()]
+                votes = sum(rating_distribution)
+                rating_sum = sum(element * (index + 1) for index, element in enumerate(rating_distribution))
+                noised_sum = sum(element * (index + 1) for index, element in enumerate(noised_rating_distribution))
+                y.append((noised_sum - rating_sum)/votes)
+                x.append(votes)
+                line_count += 1
+
+        if file_str == 'Movie':
+            plt.xscale("log")
+            plt.xlim(1000, 100000)
+        plt.xlabel('Number of Ratings')
+        plt.ylabel('Average Noise')
+        plt.title(f'Average Noise Distribution for All {file_str}s')
+        plt.scatter(x, y, marker='x')
+        plt.subplots_adjust(left=0.15, right=0.9, top=0.9, bottom=0.1)
+        plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/avg_noises_{file_str}s.png'))
+        plt.clf()
 
     return JsonResponse({"msg": "plot success"})
