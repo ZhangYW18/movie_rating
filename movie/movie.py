@@ -405,3 +405,39 @@ def get_avg_noise_scatter_chart_for_all_users(request):
 
 def get_avg_noise_scatter_chart_for_all_movies(request):
     return get_avg_noise_scatter_chart(request, 'Movie')
+
+
+def get_variance_percentage_scatter_chart_all_movies(request):
+    file_str = 'Movie'
+    time_str = '1700938086'
+    x, y = [], []
+    with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        line_count = 0
+        for row in csv_reader:
+            if line_count == 0:
+                line_count += 1
+                continue
+
+            variance_pre = float(row[4])
+            variance_noised = float(row[6])
+
+            x.append(variance_pre)
+            y.append(variance_noised)
+            line_count += 1
+
+    plt.ylabel('Noised Variance', rotation=0, labelpad=50.0)
+    plt.title(f'Variance of Rating Distribution for All {file_str}s\n (Noised vs Original)')
+    plt.scatter(x, y, marker='x')
+
+    # Plot y=x as a baseline for comparison
+    x_values = np.linspace(min(min(x), min(y)), max(max(x), max(y)), 100)
+    y_values = x_values
+    plt.plot(x_values, y_values, color='red')
+
+    plt.subplots_adjust(left=0.3, right=0.9, top=0.9, bottom=0.1)
+    plt.xlabel('Variance of Original Ratings')
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/variance_{file_str}s.png')
+    plt.savefig(img_path)
+    plt.clf()
+    return FileResponse(open(img_path, 'rb'))
