@@ -7,7 +7,7 @@ import threading
 import traceback
 
 from django.db.models import Count, Avg, F
-from django.http import JsonResponse, HttpRequest, Http404
+from django.http import JsonResponse, HttpRequest, Http404, FileResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from rating_backend.settings import ARCHIVE_DATA_FOLDER, MAX_RATING, EPSILON_GLOBAL_DP, \
@@ -298,10 +298,15 @@ def get_movie_rating_dist(request):
     return JsonResponse(distribution_data)
 
 
-def get_noise_value_bar_diagram(request):
+# Optional parameter movie_id
+def get_noise_pie_chart_for_movie(request, movie_id=-1):
     y = [[0 for _ in range(5)] for _ in range(6)]
 
-    ratings = Rating.objects.filter(movie_id__lt=306)
+    ratings = Rating.objects
+    if movie_id == -1:
+        ratings = ratings.filter(movie_id__lt=306)
+    else:
+        ratings = ratings.filter(movie_id=movie_id)
     for rating in ratings:
         # print(rating.rating)
         y[0][abs(rating.noise)] = y[0][abs(rating.noise)] + 1
@@ -310,7 +315,8 @@ def get_noise_value_bar_diagram(request):
     # Draw the distribution of noise for all noised ratings
     plt.title('Noise Value Stats')
     plt.pie(y[0], labels=range(0, 5))
-    plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_pie.png'))
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_pie.png')
+    plt.savefig(img_path)
     plt.clf()
 
     # Draw the distribution of noise for each original rating value
@@ -324,10 +330,10 @@ def get_noise_value_bar_diagram(request):
         plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_count_{i}.png'))
         plt.clf()
 
-    return JsonResponse({"msg": "plot success"})
+    return FileResponse(open(img_path, 'rb'))
 
 
-def get_avg_noise_for_movies(request, movie_id):
+def get_avg_noise_trend_line_chart_for_movie(request, movie_id):
     x = [2 ** i for i in range(1, 25)]
     y = [0] * 25
 
@@ -352,42 +358,50 @@ def get_avg_noise_for_movies(request, movie_id):
     plt.xscale("log")
     plt.subplots_adjust(left=0.2, right=0.9, top=0.9, bottom=0.1)
     plt.plot(x, y, marker='o', color='b')
-    plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/avg_noise_movie_{movie_id}.png'))
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/avg_noise_movie_{movie_id}.png')
+    plt.savefig(img_path)
     plt.clf()
 
-    return JsonResponse({"msg": "plot success"})
+    return FileResponse(open(img_path, 'rb'))
 
 
-def get_avg_noise_for_all_movie_user(request, time_str):
-    # timestr = 1700938086 for now
-    for file_str in ['Movie', 'User']:
-        x, y = [], []
-        with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
-            csv_reader = csv.reader(csv_file, delimiter=',')
-            line_count = 0
-            for row in csv_reader:
-                if line_count == 0:
-                    line_count += 1
-                    continue
-
-                rating_distribution = [int(rating) for rating in row[3][1:-1].split()]
-                noised_rating_distribution = [int(rating) for rating in row[5][1:-1].split()]
-                votes = sum(rating_distribution)
-                rating_sum = sum(element * (index + 1) for index, element in enumerate(rating_distribution))
-                noised_sum = sum(element * (index + 1) for index, element in enumerate(noised_rating_distribution))
-                y.append((noised_sum - rating_sum)/votes)
-                x.append(votes)
+# file_str is either 'Movie' or 'User'
+def get_avg_noise_scatter_chart(request, file_str='Movie', time_str='1700938086'):
+    x, y = [], []
+    with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        line_count = 0
+        for row in csv_reader:
+            if line_count == 0:
                 line_count += 1
+                continue
 
-        if file_str == 'Movie':
-            plt.xscale("log")
-            plt.xlim(1000, 100000)
-        plt.xlabel('Number of Ratings')
-        plt.ylabel('Average Noise')
-        plt.title(f'Average Noise Distribution for All {file_str}s')
-        plt.scatter(x, y, marker='x')
-        plt.subplots_adjust(left=0.15, right=0.9, top=0.9, bottom=0.1)
-        plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/avg_noises_{file_str}s.png'))
-        plt.clf()
+            rating_distribution = [int(rating) for rating in row[3][1:-1].split()]
+            noised_rating_distribution = [int(rating) for rating in row[5][1:-1].split()]
+            votes = sum(rating_distribution)
+            rating_sum = sum(element * (index + 1) for index, element in enumerate(rating_distribution))
+            noised_sum = sum(element * (index + 1) for index, element in enumerate(noised_rating_distribution))
+            y.append((noised_sum - rating_sum)/votes)
+            x.append(votes)
+            line_count += 1
 
-    return JsonResponse({"msg": "plot success"})
+    if file_str == 'Movie':
+        plt.xscale("log")
+        plt.xlim(1000, 100000)
+    plt.xlabel('Number of Ratings')
+    plt.ylabel('Average Noise')
+    plt.title(f'Average Noise Distribution for All {file_str}s')
+    plt.scatter(x, y, marker='x')
+    plt.subplots_adjust(left=0.15, right=0.9, top=0.9, bottom=0.1)
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/avg_noises_{file_str}s.png')
+    plt.savefig(img_path)
+    plt.clf()
+    return FileResponse(open(img_path, 'rb'))
+
+
+def get_avg_noise_scatter_chart_for_all_users(request):
+    return get_avg_noise_scatter_chart(request, 'User')
+
+
+def get_avg_noise_scatter_chart_for_all_movies(request):
+    return get_avg_noise_scatter_chart(request, 'Movie')
