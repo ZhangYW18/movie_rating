@@ -21,5 +21,6 @@ from . import index
 urlpatterns = [
     path("", index.get_index_hello),
     path("v1/movie/", include("movie.urls")),
+    path("v1/user/", include("user.urls")),
     path('admin/', admin.site.urls),
 ]
