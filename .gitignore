@@ -2,3 +2,4 @@ archive/*
 test.py
 venv
 .idea
+movie/diagrams/*

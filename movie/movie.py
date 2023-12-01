@@ -1,4 +1,5 @@
 import csv
+import os
 import time
 
 import numpy as np
@@ -6,17 +7,23 @@ import threading
 import traceback
 
 from django.db.models import Count, Avg, F
-from django.http import JsonResponse, HttpRequest, Http404
+from django.http import JsonResponse, HttpRequest, Http404, FileResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from rating_backend.settings import ARCHIVE_DATA_FOLDER, MAX_RATING, EPSILON_GLOBAL_DP, \
     SENSITIVITY_GLOBAL_DP, SCORE_MOVIE_RATING_DISTRIBUTION, SCORE_USER_RATING_DISTRIBUTION, DATASET_MAX_USER_ID, \
-    DATASET_MAX_MOVIE_ID
+    DATASET_MAX_MOVIE_ID, RESULT_DATA_FOLDER
 from .models import Movie
 from .models import Rating
 
+import matplotlib
 
-def load_csv_data(request, min_movie_id=0, max_movie_id=DATASET_MAX_MOVIE_ID, max_user_id=DATASET_MAX_USER_ID, evaluate=False, evaluate_by_user=False):
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+
+def load_csv_data(request, min_movie_id=0, max_movie_id=DATASET_MAX_MOVIE_ID, max_user_id=DATASET_MAX_USER_ID,
+                  evaluate=False, evaluate_by_user=False):
     # Movie.objects.all().delete()
     Rating.objects.all().delete()
     if evaluate_by_user:
@@ -101,9 +108,9 @@ def add_noise(rating_obj, store_instantly=True):
     # print(movie_noised_rating_distribution)
     # print(movie_rating_distribution)
     movie_rating_nums = movie_ratings.count()
-    scores = [0]*MAX_RATING
+    scores = [0] * MAX_RATING
     for v in movie_rating_distribution.all():
-        scores[v['rating']-1] = v['count'] * SCORE_MOVIE_RATING_DISTRIBUTION / movie_rating_nums
+        scores[v['rating'] - 1] = v['count'] * SCORE_MOVIE_RATING_DISTRIBUTION / movie_rating_nums
 
     # Add Laplace noise to the scores based on user's personal rating noise history
     user_rated_movies = Rating.objects.filter(user_id=rating_obj.user_id)
@@ -121,10 +128,11 @@ def add_noise(rating_obj, store_instantly=True):
     score_from_user_distribution = [abs(i + 1 - rating_obj.rating - (-user_avg_noise)) for i in range(0, MAX_RATING)]
     score_from_user_distribution = [np.exp(x) for x in score_from_user_distribution]
     min_tmp = min(score_from_user_distribution)
-    score_from_user_distribution = [max(min_tmp*10 - score, 0) for score in score_from_user_distribution]
+    score_from_user_distribution = [max(min_tmp * 10 - score, 0) for score in score_from_user_distribution]
     sum_laplace_user = sum(score_from_user_distribution)
-    score_from_user_distribution = [score * SCORE_USER_RATING_DISTRIBUTION / sum_laplace_user for score in score_from_user_distribution]
-    #print(user_avg_noise, rating_obj.rating, score_from_user_distribution)
+    score_from_user_distribution = [score * SCORE_USER_RATING_DISTRIBUTION / sum_laplace_user for score in
+                                    score_from_user_distribution]
+    # print(user_avg_noise, rating_obj.rating, score_from_user_distribution)
 
     scores = [score_from_user_distribution[i] + score for i, score in enumerate(scores)]
     noisy_scores = [np.random.laplace(loc=0, scale=SENSITIVITY_GLOBAL_DP / EPSILON_GLOBAL_DP) + score
@@ -137,7 +145,7 @@ def add_noise(rating_obj, store_instantly=True):
     # min_tmp = min(noisy_scores)
     # noisy_scores = [min_tmp-1 if abs(i+1-rating_obj.rating) > 2 else score for i, score in enumerate(noisy_scores)]
 
-    ratings = range(1, MAX_RATING+1)
+    ratings = range(1, MAX_RATING + 1)
     noised_rating = ratings[np.argmax(noisy_scores)]
 
     # Get selected noise and store it into DB
@@ -178,13 +186,13 @@ def handle_rate(request, movie_id):
 
 
 def get_variance_for_distribution(rating_distribution):
-    ratings = list(range(1, MAX_RATING+1))
-    counts = [0]*MAX_RATING
+    ratings = list(range(1, MAX_RATING + 1))
+    counts = [0] * MAX_RATING
     for v in rating_distribution.all():
         if 'rating' in v:
-            counts[v['rating']-1] = v['count']
+            counts[v['rating'] - 1] = v['count']
         else:
-            counts[v['noised_rating']-1] = v['count']
+            counts[v['noised_rating'] - 1] = v['count']
     ratings = np.array(ratings)
     counts = np.array(counts)
     weighted_mean = np.average(ratings, weights=counts)
@@ -199,7 +207,7 @@ def export_movie_rating_distribution(max_movie_id=DATASET_MAX_MOVIE_ID, time_now
                   'rating_count', 'rating_variance',
                   'noised_count', 'noised_variance']
         writer.writerow(header)
-        for i in range(0, max_movie_id+1):
+        for i in range(0, max_movie_id + 1):
             if i % 100 == 0:
                 print(f"Processed movies with max_movie_id<{i}.")
             movie_ratings = Rating.objects.filter(movie_id=i)
@@ -208,11 +216,11 @@ def export_movie_rating_distribution(max_movie_id=DATASET_MAX_MOVIE_ID, time_now
             movie_avg_noise = movie_ratings.aggregate(Avg("noise", default=0))['noise__avg']
             movie_avg_rating = movie_ratings.aggregate(Avg("rating", default=0))['rating__avg']
             movie_rating_distribution = movie_ratings.values('rating').annotate(count=Count('id')).order_by('rating')
-            movie_noised_rating_distribution = movie_ratings.annotate(noised_rating=F('noise')+F('rating')) \
+            movie_noised_rating_distribution = movie_ratings.annotate(noised_rating=F('noise') + F('rating')) \
                 .values('noised_rating').annotate(count=Count('id')).order_by('noised_rating')
             counts, variance = get_variance_for_distribution(movie_rating_distribution)
             n_counts, n_variance = get_variance_for_distribution(movie_noised_rating_distribution)
-            data = [i, "{:.1f}".format(movie_avg_rating), "{:.1f}".format(movie_avg_rating+movie_avg_noise),
+            data = [i, "{:.1f}".format(movie_avg_rating), "{:.1f}".format(movie_avg_rating + movie_avg_noise),
                     counts, variance,
                     n_counts, n_variance]
             writer.writerow(data)
@@ -226,7 +234,7 @@ def export_user_rating_distribution(max_user_id=DATASET_MAX_USER_ID, time_now=st
                   'rating_count', 'rating_variance',
                   'noised_count', 'noised_variance']
         writer.writerow(header)
-        for i in range(0, max_user_id+1):
+        for i in range(0, max_user_id + 1):
             if i % 10000 == 0:
                 print(f"Processed users with max_user_id<{i}.")
             user_ratings = Rating.objects.filter(user_id=i)
@@ -235,11 +243,11 @@ def export_user_rating_distribution(max_user_id=DATASET_MAX_USER_ID, time_now=st
             user_avg_noise = user_ratings.aggregate(Avg("noise", default=0))['noise__avg']
             user_avg_rating = user_ratings.aggregate(Avg("rating", default=0))['rating__avg']
             user_rating_distribution = user_ratings.values('rating').annotate(count=Count('id')).order_by('rating')
-            user_noised_rating_distribution = user_ratings.annotate(noised_rating=F('noise')+F('rating')) \
+            user_noised_rating_distribution = user_ratings.annotate(noised_rating=F('noise') + F('rating')) \
                 .values('noised_rating').annotate(count=Count('id')).order_by('noised_rating')
             counts, variance = get_variance_for_distribution(user_rating_distribution)
             n_counts, n_variance = get_variance_for_distribution(user_noised_rating_distribution)
-            data = [i, "{:.1f}".format(user_avg_rating), "{:.1f}".format(user_avg_rating+user_avg_noise),
+            data = [i, "{:.1f}".format(user_avg_rating), "{:.1f}".format(user_avg_rating + user_avg_noise),
                     counts, variance,
                     n_counts, n_variance]
             writer.writerow(data)
@@ -247,7 +255,7 @@ def export_user_rating_distribution(max_user_id=DATASET_MAX_USER_ID, time_now=st
 
 
 def handle_evaluate_by_movie(request, max_movie_id=DATASET_MAX_MOVIE_ID):
-    load_csv_data(request, max_movie_id=max_movie_id, evaluate=True)
+    # load_csv_data(request, max_movie_id=max_movie_id, evaluate=True)
     print(f"Waiting for result exportation...")
     time_now = str(int(time.time()))
     export_movie_rating_distribution(max_movie_id=max_movie_id, time_now=time_now)
@@ -281,10 +289,155 @@ def get_movie_rating_dist(request):
     movie_id = request.GET.get('movie_id')
     if not movie_id:
         return JsonResponse({'error': 'Movie ID is required.'}, status=400)
-    
-    distribution = Rating.objects.filter(movie_id=int(movie_id)).values('rating').annotate(count=Count('rating')).order_by('rating')
+
+    distribution = Rating.objects.filter(movie_id=int(movie_id)).values('rating').annotate(
+        count=Count('rating')).order_by('rating')
     print(distribution)
     distribution_data = {rating['rating']: rating['count'] for rating in distribution}
-    
+
     return JsonResponse(distribution_data)
 
+
+# Optional parameter movie_id
+def get_noise_pie_chart_for_movie(request, movie_id=-1):
+    y = [[0 for _ in range(5)] for _ in range(6)]
+
+    ratings = Rating.objects
+    if movie_id == -1:
+        ratings = ratings.filter(movie_id__lt=306)
+    else:
+        ratings = ratings.filter(movie_id=movie_id)
+    for rating in ratings:
+        # print(rating.rating)
+        y[0][abs(rating.noise)] = y[0][abs(rating.noise)] + 1
+        y[rating.rating][rating.rating + rating.noise - 1] = y[rating.rating][rating.rating + rating.noise - 1] + 1
+
+    # Draw the distribution of noise for all noised ratings
+    plt.title('Noise Value Stats')
+    plt.pie(y[0], labels=range(0, 5))
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_pie.png')
+    plt.savefig(img_path)
+    plt.clf()
+
+    # Draw the distribution of noise for each original rating value
+    for i in range(1, 6):
+        plt.xlabel('Delta (Noise)')
+        plt.ylabel('Counts')
+        x = range(1, 6)
+        plt.title('Noised Ratings for Rating ' + str(i))
+        plt.bar(x, y[i])
+        plt.subplots_adjust(left=0.2, right=0.9, top=0.9, bottom=0.1)
+        plt.savefig(os.path.join(os.path.dirname(__file__), f'diagrams/noise_value_count_{i}.png'))
+        plt.clf()
+
+    return FileResponse(open(img_path, 'rb'))
+
+
+def get_avg_noise_trend_line_chart_for_movie(request, movie_id):
+    x = [2 ** i for i in range(1, 25)]
+    y = [0] * 25
+
+    ratings = Rating.objects.filter(movie_id=movie_id).order_by("user_id")
+    sum_noise = 0
+    ix = 0
+    for i, rating in enumerate(ratings):
+        sum_noise += rating.noise
+        if i + 1 == x[ix]:
+            y[ix] = sum_noise / float(i + 1)
+            ix = ix + 1
+    x[ix] = ratings.count()
+    y[ix] = sum_noise / float(x[ix])
+    ix = ix + 1
+    x, y = x[0:ix], y[0:ix]
+    # print(x)
+    # print(y)
+
+    plt.xlabel('Number of Ratings')
+    plt.ylabel('Average Noise')
+    plt.title('Average Noise Trend for Movie #' + str(movie_id))
+    plt.xscale("log")
+    plt.subplots_adjust(left=0.2, right=0.9, top=0.9, bottom=0.1)
+    plt.plot(x, y, marker='o', color='b')
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/avg_noise_movie_{movie_id}.png')
+    plt.savefig(img_path)
+    plt.clf()
+
+    return FileResponse(open(img_path, 'rb'))
+
+
+# file_str is either 'Movie' or 'User'
+def get_avg_noise_scatter_chart(request, file_str='Movie', time_str='1700938086'):
+    x, y = [], []
+    with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        line_count = 0
+        for row in csv_reader:
+            if line_count == 0:
+                line_count += 1
+                continue
+
+            rating_distribution = [int(rating) for rating in row[3][1:-1].split()]
+            noised_rating_distribution = [int(rating) for rating in row[5][1:-1].split()]
+            votes = sum(rating_distribution)
+            rating_sum = sum(element * (index + 1) for index, element in enumerate(rating_distribution))
+            noised_sum = sum(element * (index + 1) for index, element in enumerate(noised_rating_distribution))
+            y.append((noised_sum - rating_sum)/votes)
+            x.append(votes)
+            line_count += 1
+
+    if file_str == 'Movie':
+        plt.xscale("log")
+        plt.xlim(1000, 100000)
+    plt.xlabel('Number of Ratings')
+    plt.ylabel('Average Noise')
+    plt.title(f'Average Noise Distribution for All {file_str}s')
+    plt.scatter(x, y, marker='x')
+    plt.subplots_adjust(left=0.15, right=0.9, top=0.9, bottom=0.1)
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/avg_noises_{file_str}s.png')
+    plt.savefig(img_path)
+    plt.clf()
+    return FileResponse(open(img_path, 'rb'))
+
+
+def get_avg_noise_scatter_chart_for_all_users(request):
+    return get_avg_noise_scatter_chart(request, 'User')
+
+
+def get_avg_noise_scatter_chart_for_all_movies(request):
+    return get_avg_noise_scatter_chart(request, 'Movie')
+
+
+def get_variance_percentage_scatter_chart_all_movies(request):
+    file_str = 'Movie'
+    time_str = '1700938086'
+    x, y = [], []
+    with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        line_count = 0
+        for row in csv_reader:
+            if line_count == 0:
+                line_count += 1
+                continue
+
+            variance_pre = float(row[4])
+            variance_noised = float(row[6])
+
+            x.append(variance_pre)
+            y.append(variance_noised)
+            line_count += 1
+
+    plt.ylabel('Noised Variance', rotation=0, labelpad=50.0)
+    plt.title(f'Variance of Rating Distribution for All {file_str}s\n (Noised vs Original)')
+    plt.scatter(x, y, marker='x')
+
+    # Plot y=x as a baseline for comparison
+    x_values = np.linspace(min(min(x), min(y)), max(max(x), max(y)), 100)
+    y_values = x_values
+    plt.plot(x_values, y_values, color='red')
+
+    plt.subplots_adjust(left=0.3, right=0.9, top=0.9, bottom=0.1)
+    plt.xlabel('Variance of Original Ratings')
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/variance_{file_str}s.png')
+    plt.savefig(img_path)
+    plt.clf()
+    return FileResponse(open(img_path, 'rb'))

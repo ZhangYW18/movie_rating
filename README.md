@@ -1,6 +1,11 @@
 
 # Installation
 
+## Activate venv
+(TODO)
+
+## Install Dependencies
+
 To install packages
 ```shell
 pip install -r requirements.txt 

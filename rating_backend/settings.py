@@ -33,6 +33,7 @@ ALLOWED_HOSTS = []
 settings_dir = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.dirname(settings_dir))
 ARCHIVE_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'archive/')
+RESULT_DATA_FOLDER = os.path.join(PROJECT_ROOT, 'results/')
 
 # DP related
 MAX_RATING = 5
