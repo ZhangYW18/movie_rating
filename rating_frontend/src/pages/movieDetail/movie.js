@@ -88,7 +88,25 @@ const Movie = () => {
         return totalCount > 0 ? (totalNoisedRatings / totalCount).toFixed(2) : 0;
     };
 
+    const calculateMean = (distribution) => {
+        const total = Object.entries(distribution).reduce((acc, [rating, count]) => acc + (rating * count), 0);
+        const count = Object.values(distribution).reduce((acc, count) => acc + count, 0);
+        return total / count;
+    };
+
+    const calculateVariance = (distribution, mean) => {
+        const variance = Object.entries(distribution).reduce((acc, [rating, count]) => {
+            return acc + (count * (rating - mean) ** 2);
+        }, 0);
+        const count = Object.values(distribution).reduce((acc, count) => acc + count, 0);
+        return variance / count;
+    };
+
     const averageNoisedRating = calculateAverageNoisedRating();
+    const rawMean = calculateMean(ratingDistribution);
+    const noisedMean = calculateMean(noisedRatingDistribution);
+    const rawVariance = calculateVariance(ratingDistribution, rawMean);
+    const noisedVariance = calculateVariance(noisedRatingDistribution, noisedMean);
 
     return (
         <div className="movie">
@@ -131,6 +149,19 @@ const Movie = () => {
                     <div className="movie__heading">Rating Distribution</div>
                     <div className="movie__ratingDistribution">
                         {renderRatingDistribution()}
+                    </div>
+
+                    <div className="movie__statistics">
+                        <div>
+                            <h3>Raw Data Statistics</h3>
+                            <p>Mean: {rawMean.toFixed(2)}</p>
+                            <p>Variance: {rawVariance.toFixed(2)}</p>
+                        </div>
+                        <div>
+                            <h3>Noised Data Statistics</h3>
+                            <p>Mean: {noisedMean.toFixed(2)}</p>
+                            <p>Variance: {noisedVariance.toFixed(2)}</p>
+                        </div>
                     </div>
 
                 </div>
