@@ -8,7 +8,7 @@ urlpatterns = [
     path("evaluate/mid/<int:max_movie_id>/", movie.handle_evaluate_by_movie),
     path("evaluate/uid/<int:max_user_id>/", movie.handle_evaluate_by_user),
     path("<int:id>/", movie.get_movie, name="get movie details"),
-    path("rating_distribution/", movie.get_movie_rating_dist, name="get movie rating distribution"),
+    path("get_rating_distribution/<int:movie_id>/", movie.get_movie_rating_dist, name="get movie rating distribution"),
     # Get noise pie chart for all noised ratings
     path("generate_noise_bar_diagram/", movie.get_noise_pie_chart_for_movie),
     # Get noise pie chart for noised ratings of a single movie

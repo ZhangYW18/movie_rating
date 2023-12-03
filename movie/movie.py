@@ -284,18 +284,46 @@ def get_movie(request, id):
         raise Http404("Movie does not exist")
 
 
-def get_movie_rating_dist(request):
-    # Assume movie ID is provided as a query parameter
-    movie_id = request.GET.get('movie_id')
-    if not movie_id:
+def get_movie_rating_dist(request, movie_id=-1):
+    if movie_id == -1:
         return JsonResponse({'error': 'Movie ID is required.'}, status=400)
 
-    distribution = Rating.objects.filter(movie_id=int(movie_id)).values('rating').annotate(
-        count=Count('rating')).order_by('rating')
-    print(distribution)
-    distribution_data = {rating['rating']: rating['count'] for rating in distribution}
+    # distribution = Rating.objects.filter(movie_id=int(movie_id)).values('rating').annotate(
+    #     count=Count('rating')).order_by('rating')
+    # distribution_data = {rating['rating']: rating['count'] for rating in distribution}
 
-    return JsonResponse(distribution_data)
+    # return JsonResponse(distribution_data)
+    
+    # Get the distribution of raw ratings
+    rating_distribution = (
+        Rating.objects
+        .filter(movie_id=movie_id)
+        .values('rating')
+        .annotate(count=Count('rating'))
+        .order_by('rating')
+    )
+
+    # Get the distribution of noised ratings
+    noised_rating_distribution = (
+        Rating.objects
+        .filter(movie_id=movie_id)
+        .annotate(noised_rating=F('rating') + F('noise'))
+        .values('noised_rating')
+        .annotate(count=Count('noised_rating'))
+        .order_by('noised_rating')
+    )
+
+    # Convert querysets to dictionaries for JSON response
+    rating_distribution_dict = {entry['rating']: entry['count'] for entry in rating_distribution}
+    noised_rating_distribution_dict = {entry['noised_rating']: entry['count'] for entry in noised_rating_distribution}
+
+    # Prepare the response data
+    response_data = {
+        'rating_distribution': rating_distribution_dict,
+        'noised_rating_distribution': noised_rating_distribution_dict,
+    }
+
+    return JsonResponse(response_data)
 
 
 # Optional parameter movie_id
