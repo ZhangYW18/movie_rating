@@ -123,14 +123,14 @@ def add_noise(rating_obj, store_instantly=True):
 
     # Normalize the laplace scores so that their sum is 1 and remains the same ratio
     # score_from_user_distribution = [laplace_sample(i + 1 - rating_obj.rating, -user_avg_noise) for i in range(0, MAX_RATING)]
-    # sum_laplace_user = sum(score_from_user_distribution)
-    # score_from_user_distribution = [score * SCORE_USER_RATING_DISTRIBUTION / sum_laplace_user for score in score_from_user_distribution]
+    # sum_score_user = sum(score_from_user_distribution)
+    # score_from_user_distribution = [score * SCORE_USER_RATING_DISTRIBUTION / sum_score_user for score in score_from_user_distribution]
     score_from_user_distribution = [abs(i + 1 - rating_obj.rating - (-user_avg_noise)) for i in range(0, MAX_RATING)]
     score_from_user_distribution = [np.exp(x) for x in score_from_user_distribution]
     min_tmp = min(score_from_user_distribution)
     score_from_user_distribution = [max(min_tmp * 10 - score, 0) for score in score_from_user_distribution]
-    sum_laplace_user = sum(score_from_user_distribution)
-    score_from_user_distribution = [score * SCORE_USER_RATING_DISTRIBUTION / sum_laplace_user for score in
+    sum_score_user = sum(score_from_user_distribution)
+    score_from_user_distribution = [score * SCORE_USER_RATING_DISTRIBUTION / sum_score_user for score in
                                     score_from_user_distribution]
     # print(user_avg_noise, rating_obj.rating, score_from_user_distribution)
 
@@ -435,7 +435,7 @@ def get_avg_noise_scatter_chart_for_all_movies(request):
     return get_avg_noise_scatter_chart(request, 'Movie')
 
 
-def get_variance_percentage_scatter_chart_all_movies(request):
+def get_variance_scatter_chart_all_movies(request):
     file_str = 'Movie'
     time_str = '1700938086'
     x, y = [], []
@@ -454,17 +454,26 @@ def get_variance_percentage_scatter_chart_all_movies(request):
             y.append(variance_noised)
             line_count += 1
 
-    plt.ylabel('Noised Variance', rotation=0, labelpad=50.0)
-    plt.title(f'Variance of Rating Distribution for All {file_str}s\n (Noised vs Original)')
-    plt.scatter(x, y, marker='x')
+    # plt.ylabel('Variance of\nNoised Ratings', rotation=0, labelpad=50.0)
+    # plt.title(f'Variance of Rating Distribution for All {file_str}s\n (Noised vs Original)')
+    #_, ax = plt.subplots()
+    ax = plt.gca()
+    ax.tick_params(axis='both', which='major', labelsize=15)
+    ax.tick_params(axis='both', which='minor', labelsize=15)
+    ax.set_aspect(1)
+
+    plt.xticks(np.arange(0, max(y) + 1, 0.2))
+    plt.yticks(np.arange(0, max(y) + 1, 0.2))
+    #plt.axis('equal')
+    plt.scatter(x, y, marker='x', sizes=(80,))
 
     # Plot y=x as a baseline for comparison
     x_values = np.linspace(min(min(x), min(y)), max(max(x), max(y)), 100)
     y_values = x_values
     plt.plot(x_values, y_values, color='red')
 
-    plt.subplots_adjust(left=0.3, right=0.9, top=0.9, bottom=0.1)
-    plt.xlabel('Variance of Original Ratings')
+    plt.subplots_adjust(left=0.15, right=0.85, top=0.9, bottom=0.1)
+    # plt.xlabel('Variance of Original Ratings')
     img_path = os.path.join(os.path.dirname(__file__), f'diagrams/variance_{file_str}s.png')
     plt.savefig(img_path)
     plt.clf()
