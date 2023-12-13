@@ -25,12 +25,12 @@ import matplotlib.pyplot as plt
 def load_csv_data(request, min_movie_id=0, max_movie_id=DATASET_MAX_MOVIE_ID, max_user_id=DATASET_MAX_USER_ID,
                   evaluate=False, evaluate_by_user=False):
     # Movie.objects.all().delete()
-    Rating.objects.all().delete()
+    # Rating.objects.all().delete()
     if evaluate_by_user:
         Rating.objects.filter(user_id__lte=max_user_id).delete()
     else:
-        # Movie.objects.filter(id__lte=max_movie_id).delete()
-        Rating.objects.filter(movie_id__lte=max_movie_id).delete()
+        Rating.objects.all().delete()
+        # Rating.objects.filter(movie_id__lte=max_movie_id).delete()
     with open(ARCHIVE_DATA_FOLDER + 'Netflix_Dataset_Movie.csv') as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
@@ -58,46 +58,49 @@ def load_csv_data(request, min_movie_id=0, max_movie_id=DATASET_MAX_MOVIE_ID, ma
         for row in csv_reader:
             # if line_count > 10000:
             #     break
-            if line_count % 1000 == 0:
-                print(f'Processed {line_count} lines of ratings.')
             if line_count == 0:
                 print(f'Column names are {", ".join(row)}')
                 line_count += 1
+                continue
+
+            if line_count % 1000 == 0:
+                print(f'Processed {line_count} lines of ratings.')
+
+            if evaluate_by_user:
+                if int(row[0]) > max_user_id:
+                    break
             else:
-                if evaluate_by_user:
-                    if int(row[0]) > max_user_id:
-                        break
-                else:
-                    if int(row[2]) < min_movie_id:
-                        continue
-                    if int(row[2]) > max_movie_id:
-                        break
-                    if int(row[0]) > max_user_id:
-                        continue
-                if evaluate:
-                    if pre_movie_id != int(row[2]):
-                        pre_movie_id = int(row[2])
-                        movie_rate_user_count = 1
-                    else:
-                        # if movie_rate_user_count >= 1000:
-                        #     continue
-                        movie_rate_user_count = movie_rate_user_count + 1
-                    request = HttpRequest()
-                    request.POST['user_id'] = row[0]
-                    request.POST['rating'] = row[1]
-                    m = Rating(movie_id=Movie(id=int(row[2])), user_id=int(row[0]), rating=int(row[1]))
-                    m.noise = add_noise(m, store_instantly=False)
-                    m.save()
-                else:
-                    m = Rating(movie_id=Movie(id=int(row[2])), user_id=int(row[0]), rating=int(row[1]))
-                    m.save()
-                line_count += 1
+                if int(row[2]) < min_movie_id:
+                    continue
+                if int(row[2]) > max_movie_id:
+                    break
+                if int(row[0]) > max_user_id:
+                    continue
+
+            if pre_movie_id != int(row[2]):
+                pre_movie_id = int(row[2])
+                movie_rate_user_count = 1
+            else:
+                if movie_rate_user_count >= 1000:
+                    continue
+                movie_rate_user_count = movie_rate_user_count + 1
+
+            if evaluate:
+                request = HttpRequest()
+                request.POST['user_id'] = row[0]
+                request.POST['rating'] = row[1]
+                m = Rating(movie_id=Movie(id=int(row[2])), user_id=int(row[0]), rating=int(row[1]))
+                m.noise = add_noise(m, store_instantly=False)
+                m.save()
+            else:
+                m = Rating(movie_id=Movie(id=int(row[2])), user_id=int(row[0]), rating=int(row[1]))
+                m.save()
+            line_count += 1
         print(f'Processed {line_count} lines for rating table.')
     return JsonResponse({"msg": "load success"})
 
 
 # Report noisy max
-# Special case: when user modify the rating?
 def add_noise(rating_obj, store_instantly=True):
     # Calculate the scores for each rating based on the average rating of a movie
     movie_ratings = Rating.objects.filter(movie_id=rating_obj.movie_id).values('rating')
@@ -201,7 +204,7 @@ def get_variance_for_distribution(rating_distribution):
 
 
 def export_movie_rating_distribution(max_movie_id=DATASET_MAX_MOVIE_ID, time_now=str(int(time.time()))):
-    with open(ARCHIVE_DATA_FOLDER + 'Evaluate_Result_Movie' + time_now + '.csv', 'w') as f:
+    with open(RESULT_DATA_FOLDER + 'Evaluate_Result_Movie' + time_now + '.csv', 'w') as f:
         writer = csv.writer(f)
         header = ['movie_id', 'avg_rating', 'avg_noised_rating',
                   'rating_count', 'rating_variance',
@@ -228,7 +231,7 @@ def export_movie_rating_distribution(max_movie_id=DATASET_MAX_MOVIE_ID, time_now
 
 
 def export_user_rating_distribution(max_user_id=DATASET_MAX_USER_ID, time_now=str(int(time.time()))):
-    with open(ARCHIVE_DATA_FOLDER + 'Evaluate_Result_User' + time_now + '.csv', 'w') as f:
+    with open(RESULT_DATA_FOLDER + 'Evaluate_Result_User' + time_now + '.csv', 'w') as f:
         writer = csv.writer(f)
         header = ['user_id', 'avg_rating', 'avg_noised_rating',
                   'rating_count', 'rating_variance',
@@ -255,7 +258,7 @@ def export_user_rating_distribution(max_user_id=DATASET_MAX_USER_ID, time_now=st
 
 
 def handle_evaluate_by_movie(request, max_movie_id=DATASET_MAX_MOVIE_ID):
-    # load_csv_data(request, max_movie_id=max_movie_id, evaluate=True)
+    load_csv_data(request, max_movie_id=max_movie_id, evaluate=True)
     print(f"Waiting for result exportation...")
     time_now = str(int(time.time()))
     export_movie_rating_distribution(max_movie_id=max_movie_id, time_now=time_now)
@@ -326,13 +329,25 @@ def get_movie_rating_dist(request, movie_id=-1):
     return JsonResponse(response_data)
 
 
+# result_type should be either 'Movie' or 'User'
+def get_latest_results_file_path(result_type='Movie'):
+    files = os.listdir(RESULT_DATA_FOLDER)
+    if result_type != 'Movie':
+        result_type = 'User'
+    filtered_files = [os.path.join(RESULT_DATA_FOLDER, file) for file in files if file.startswith(f"Evaluate_Result_{result_type}")]
+    if not filtered_files:
+        return ""
+    latest_filename = max(filtered_files, key=os.path.getctime)
+    return latest_filename
+
+
 # Optional parameter movie_id
 def get_noise_pie_chart_for_movie(request, movie_id=-1):
-    y = [[0 for _ in range(5)] for _ in range(6)]
+    y = [[0 for _ in range(MAX_RATING)] for _ in range(MAX_RATING+1)]
 
     ratings = Rating.objects
     if movie_id == -1:
-        ratings = ratings.filter(movie_id__lt=306)
+        ratings = ratings.all()
     else:
         ratings = ratings.filter(movie_id=movie_id)
     for rating in ratings:
@@ -349,10 +364,11 @@ def get_noise_pie_chart_for_movie(request, movie_id=-1):
     plt.clf()
 
     # Draw the distribution of noise for each original rating value
-    for i in range(1, 6):
+    # Currently, we also generate bar charts, but does not return them.
+    for i in range(1, MAX_RATING+1):
         plt.xlabel('Delta (Noise)')
         plt.ylabel('Counts')
-        x = range(1, 6)
+        x = range(1, MAX_RATING+1)
         plt.title('Noised Ratings for Rating ' + str(i))
         plt.bar(x, y[i])
         plt.subplots_adjust(left=0.2, right=0.9, top=0.9, bottom=0.1)
@@ -398,9 +414,9 @@ def get_avg_noise_trend_line_chart_for_movie(request, movie_id):
 
 
 # file_str is either 'Movie' or 'User'
-def get_avg_noise_scatter_chart(request, file_str='Movie', time_str='1700938086'):
+def get_avg_noise_scatter_chart(request, file_str='Movie'):
     x, y = [], []
-    with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
+    with open(get_latest_results_file_path(file_str)) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
         for row in csv_reader:
@@ -419,7 +435,7 @@ def get_avg_noise_scatter_chart(request, file_str='Movie', time_str='1700938086'
 
     if file_str == 'Movie':
         plt.xscale("log")
-        plt.xlim(1000, 100000)
+        plt.xlim(min(x)/2, max(x)+min(x))
     plt.xlabel('Number of Ratings', size=15)
     plt.ylabel('Average Noise', size=15)
     plt.title(f'Average Noise of All {file_str}s', size=20)
@@ -443,10 +459,8 @@ def get_avg_noise_scatter_chart_for_all_movies(request):
 
 
 def get_variance_scatter_chart_all_movies(request):
-    file_str = 'Movie'
-    time_str = '1700938086'
     x, y = [], []
-    with open(RESULT_DATA_FOLDER + f'Evaluate_Result_{file_str}{time_str}.csv') as csv_file:
+    with open(get_latest_results_file_path('Movie')) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
         for row in csv_reader:
@@ -481,7 +495,7 @@ def get_variance_scatter_chart_all_movies(request):
 
     plt.subplots_adjust(left=0.15, right=0.85, top=0.9, bottom=0.1)
     # plt.xlabel('Variance of Original Ratings')
-    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/variance_{file_str}s.png')
+    img_path = os.path.join(os.path.dirname(__file__), f'diagrams/variance_Movies.png')
     plt.savefig(img_path)
     plt.clf()
     return FileResponse(open(img_path, 'rb'))
