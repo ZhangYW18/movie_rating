@@ -1,8 +1,8 @@
 # Introduction
 
-Presentation Slides: **PrivyPlot**: Differential Privacy on Movie Ratings
+Presentation Slides: [**PrivyPlot**: Differential Privacy on Movie Ratings](https://docs.google.com/presentation/d/1hPhhChPdDVKHcAU-Ilyq7Hvh1slxgYvY7sbvHe2t3Ak/edit?usp=sharing)
 
-https://docs.google.com/presentation/d/1hPhhChPdDVKHcAU-Ilyq7Hvh1slxgYvY7sbvHe2t3Ak/edit?usp=sharing
+![](./results/demo/demo.gif)
 
 # Installation
 
@@ -17,12 +17,12 @@ source venv/bin/activate
 
 To install packages
 ```shell
-pip install -r requirements.txt 
+pip3 install -r requirements.txt 
 ```
 
 To export packages
 ```shell
-pip freeze > requirements.txt
+pip3 freeze > requirements.txt
 ```
 
 ## MySQL Database
@@ -72,8 +72,18 @@ python movie/data_sort2.py
 
 # Run the project
 
-```
- python manage.py runserver
+```shell
+ # start the database
+ mysql.server start 
+
+ # start the backend service
+ # the backend endpoints will be available at http://127.0.0.1:8000/
+ python manage.py runserver 
+
+ # start the frontend service
+ # the frontend webpage will open at http://localhost:3000/
+ cd rating_frontend
+ npm start
 ```
 
 
