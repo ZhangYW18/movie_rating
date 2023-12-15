@@ -6,6 +6,7 @@ const Movie = () => {
     const [currentMovieDetail, setMovie] = useState()
     const [ratingDistribution, setRatingDistribution] = useState({});
     const [noisedRatingDistribution, setNoisedRatingDistribution] = useState({});
+    const [newRating, setNewRating] = useState(5);
     const { id } = useParams()
 
     useEffect(() => {
@@ -81,13 +82,6 @@ const Movie = () => {
     //     });
     // };
 
-    const calculateAverageNoisedRating = () => {
-        const totalNoisedRatings = Object.entries(noisedRatingDistribution)
-            .reduce((acc, [rating, count]) => acc + (parseInt(rating) * count), 0);
-        const totalCount = Object.values(noisedRatingDistribution).reduce((acc, count) => acc + count, 0);
-        return totalCount > 0 ? (totalNoisedRatings / totalCount).toFixed(2) : 0;
-    };
-
     const calculateMean = (distribution) => {
         const total = Object.entries(distribution).reduce((acc, [rating, count]) => acc + (rating * count), 0);
         const count = Object.values(distribution).reduce((acc, count) => acc + count, 0);
@@ -102,7 +96,23 @@ const Movie = () => {
         return variance / count;
     };
 
-    const averageNoisedRating = calculateAverageNoisedRating();
+    const submitRating = () => {
+        const payload = new FormData();
+        payload.append('rating', newRating);
+        payload.append('user_id', Math.floor(Math.random() * 1e8));
+
+        fetch(`http://127.0.0.1:8000/v1/movie/${id}/rate/`, {
+            method: 'POST',
+            body: payload,
+        })
+            .then(res => res.json())
+            .then(data => {
+                console.log("Rating submitted", data);
+                getRatingDistribution(); // refresh
+            })
+            .catch(error => console.error("Error submitting rating", error));
+    };
+
     const rawMean = calculateMean(ratingDistribution);
     const noisedMean = calculateMean(noisedRatingDistribution);
     const rawVariance = calculateVariance(ratingDistribution, rawMean);
@@ -124,7 +134,7 @@ const Movie = () => {
                         <div className="movie__name">{currentMovieDetail ? currentMovieDetail.original_title : ""}</div>
                         <div className="movie__tagline">{currentMovieDetail ? currentMovieDetail.tagline : ""}</div>
                         <div className="movie__rating">
-                            {averageNoisedRating} <i className="fas fa-star" />
+                            {noisedMean.toFixed(2)} <i className="fas fa-star" />
                             <span className="movie__voteCount">{`(${Object.values(noisedRatingDistribution).reduce((acc, count) => acc + count, 0)} votes)`}</span>
                         </div>
                         <div className="movie__runtime">{currentMovieDetail ? currentMovieDetail.runtime + " mins" : ""}</div>
@@ -162,6 +172,17 @@ const Movie = () => {
                             <p>Mean: {noisedMean.toFixed(2)}</p>
                             <p>Variance: {noisedVariance.toFixed(2)}</p>
                         </div>
+                    </div>
+
+                    <div className="movie__ratingInput">
+                        <input
+                            type="number"
+                            value={newRating}
+                            onChange={(e) => setNewRating(e.target.value)}
+                            min="1"
+                            max="5"
+                        />
+                        <button onClick={submitRating}>Submit Rating</button>
                     </div>
 
                 </div>

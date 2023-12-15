@@ -89,7 +89,7 @@
 
 .movie__links {
     position: relative;
-    margin-top: 320px;
+    margin-top: 420px;
     bottom: 120px;
     display: flex;
     justify-content: space-between;
@@ -212,4 +212,25 @@
 .movie__statistics p {
     font-size: 1rem;
     margin-bottom: 5px;
+}
+
+.movie__ratingInput {
+    margin: 20px 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.movie__ratingInput input {
+    margin-right: 10px;
+    padding: 5px;
+}
+
+.movie__ratingInput button {
+    padding: 5px 10px;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
 }
