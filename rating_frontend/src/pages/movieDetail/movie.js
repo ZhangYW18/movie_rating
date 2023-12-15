@@ -7,6 +7,8 @@ const Movie = () => {
     const [ratingDistribution, setRatingDistribution] = useState({});
     const [noisedRatingDistribution, setNoisedRatingDistribution] = useState({});
     const [newRating, setNewRating] = useState(5);
+    const [sparkRawRatings, setSparkRawRatings] = useState({});
+    const [sparkNoisedRatings, setSparkNoisedRatings] = useState({});
     const { id } = useParams()
 
     useEffect(() => {
@@ -22,11 +24,35 @@ const Movie = () => {
     }
 
     const getRatingDistribution = () => {
+        const previousRatingDistribution = { ...ratingDistribution };
+        const previousNoisedRatingDistribution = { ...noisedRatingDistribution };
+
         fetch(`http://127.0.0.1:8000/v1/movie/get_rating_distribution/${id % 50}`)
             .then(res => res.json())
             .then(data => {
                 setRatingDistribution(data.rating_distribution)
                 setNoisedRatingDistribution(data.noised_rating_distribution)
+
+                const updatedSparkRawRatings = {};
+                for (const rating of Object.keys(data.rating_distribution)) {
+                    if (data.rating_distribution[rating] !== previousRatingDistribution[rating]) {
+                        updatedSparkRawRatings[rating] = true;
+                    }
+                }
+                setSparkRawRatings(updatedSparkRawRatings);
+
+                const updatedSparkNoisedRatings = {};
+                for (const rating of Object.keys(data.noised_rating_distribution)) {
+                    if (data.noised_rating_distribution[rating] !== previousNoisedRatingDistribution[rating]) {
+                        updatedSparkNoisedRatings[rating] = true;
+                    }
+                }
+                setSparkNoisedRatings(updatedSparkNoisedRatings);
+
+                setTimeout(() => {
+                    setSparkRawRatings({});
+                    setSparkNoisedRatings({});
+                }, 500);
             })
     }
 
@@ -39,15 +65,20 @@ const Movie = () => {
 
         return Object.entries(ratingDistribution).map(([rating, count]) => {
             const noisedCount = noisedRatingDistribution[rating] || 0;
+            const hasRawChanged = sparkRawRatings[rating];
+            const hasNoisedChanged = sparkNoisedRatings[rating];
+            const sparkRawClass = hasRawChanged ? "sparkAnimation" : "";
+            const sparkNoisedClass = hasNoisedChanged ? "sparkAnimation" : "";
+
             return (
                 <>
-                    <div key={`raw-${rating}`} className="movie__ratingDistributionRow">
+                    <div key={`raw-${rating}`} className={`movie__ratingDistributionRow ${sparkRawClass}`}>
                         <span className="movie__ratingNumber">{rating}</span>
                         <div className="movie__ratingBar movie__ratingBar--raw" style={{ width: `${(count / maxCount) * 100}%` }} title={`Rating ${rating}: ${count}`}>
                             {count}
                         </div>
                     </div>
-                    <div key={`noised-${rating}`} className="movie__ratingDistributionRow movie__ratingDistributionRow--noised">
+                    <div key={`noised-${rating}`} className={`movie__ratingDistributionRow movie__ratingDistributionRow--noised ${sparkNoisedClass}`}>
                         <span className="movie__ratingNumber">{rating}</span>
                         <div className="movie__ratingBar movie__ratingBar--noised" style={{ width: `${(noisedCount / maxCount) * 100}%` }} title={`Noised Rating ${rating}: ${noisedCount}`}>
                             {noisedCount}
@@ -101,7 +132,7 @@ const Movie = () => {
         payload.append('rating', newRating);
         payload.append('user_id', Math.floor(Math.random() * 1e8));
 
-        fetch(`http://127.0.0.1:8000/v1/movie/${id}/rate/`, {
+        fetch(`http://127.0.0.1:8000/v1/movie/${id % 50}/rate/`, {
             method: 'POST',
             body: payload,
         })
